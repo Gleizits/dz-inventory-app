@@ -34,3 +34,6 @@ node_modules/
 # Salidas generadas localmente
 /out/
 *.tmp
+
+# Fotos subidas a la API (disco local, nunca al repo)
+/storage/
