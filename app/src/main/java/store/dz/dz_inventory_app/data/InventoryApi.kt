@@ -145,6 +145,18 @@ class InventoryApi(
         return post("/api/ventas/$id/anular", JSONObject()).toSale()
     }
 
+    suspend fun getSalesReport(from: String = "", to: String = ""): SalesReport {
+        val query = buildString {
+            append("/api/reportes/ventas?")
+            if (from.isNotBlank()) append("desde=${from}")
+            if (to.isNotBlank()) {
+                if (from.isNotBlank()) append("&")
+                append("hasta=$to")
+            }
+        }
+        return (get(query) as JSONObject).toSalesReport()
+    }
+
     private fun get(path: String): Any = request(path, "GET")
 
     private fun post(path: String, body: JSONObject): JSONObject =
@@ -272,6 +284,43 @@ private fun JSONObject.toSaleLine() = SaleLine(
     quantity = getInt("cantidad"),
     unitPrice = getDouble("precio_unitario"),
     subtotal = getDouble("subtotal")
+)
+
+private fun JSONObject.toSalesReport() = SalesReport(
+    from = getString("desde"),
+    to = getString("hasta"),
+    total = getJSONObject("total").toReportTotal(),
+    byProduct = getJSONArray("por_producto").toList { it.toReportLine() },
+    byDay = getJSONArray("por_dia").toList { it.toReportDay() }
+)
+
+private fun JSONObject.toReportTotal() = ReportTotal(
+    products = getInt("productos"),
+    sales = getInt("ventas"),
+    soldUnits = getInt("unidades_vendidas"),
+    saleTotal = getDouble("venta_total"),
+    purchaseCost = getDouble("costo_compra"),
+    profit = getDouble("ganancia"),
+    profitPercentage = getDouble("porcentaje_ganancia")
+)
+
+private fun JSONObject.toReportLine() = ReportLine(
+    productId = getLong("producto_id"),
+    product = getString("producto"),
+    category = getString("categoria"),
+    units = getInt("unidades"),
+    saleTotal = getDouble("venta_total"),
+    purchaseCost = getDouble("costo_compra"),
+    profit = getDouble("ganancia"),
+    profitPercentage = getDouble("porcentaje_ganancia")
+)
+
+private fun JSONObject.toReportDay() = ReportDay(
+    date = getString("fecha"),
+    units = getInt("unidades"),
+    saleTotal = getDouble("venta_total"),
+    purchaseCost = getDouble("costo_compra"),
+    profit = getDouble("ganancia")
 )
 
 private fun JSONObject.putNullable(key: String, value: String?) {
