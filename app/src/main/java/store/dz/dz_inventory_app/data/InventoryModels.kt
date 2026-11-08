@@ -58,3 +58,40 @@ data class Sale(
     val total: Double,
     val lines: List<SaleLine>
 )
+
+data class ReportLine(
+    val productId: Long,
+    val product: String,
+    val category: String,
+    val units: Int,
+    val saleTotal: Double,
+    val purchaseCost: Double,
+    val profit: Double,
+    val profitPercentage: Double
+)
+
+data class ReportTotal(
+    val products: Int,
+    val sales: Int,
+    val soldUnits: Int,
+    val saleTotal: Double,
+    val purchaseCost: Double,
+    val profit: Double,
+    val profitPercentage: Double
+)
+
+data class ReportDay(
+    val date: String,
+    val units: Int,
+    val saleTotal: Double,
+    val purchaseCost: Double,
+    val profit: Double
+)
+
+data class SalesReport(
+    val from: String,
+    val to: String,
+    val total: ReportTotal,
+    val byProduct: List<ReportLine>,
+    val byDay: List<ReportDay>
+)
