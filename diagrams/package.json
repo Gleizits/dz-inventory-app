@@ -1,0 +1,15 @@
+{
+  "name": "dz-diagramas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generacion de los diagramas de la base de datos (solo para este proyecto)",
+  "scripts": {
+    "diagramas": "mmdc -i diagrama-logico.mmd -o ../imgs/diagrama-logico.png -c puppeteer-config.json -w 2200 -s 2 -b white && mmdc -i diagrama-fisico.mmd -o ../imgs/diagrama-fisico.png -c puppeteer-config.json -w 2600 -s 2 -b white"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.12.0"
+  },
+  "allowScripts": {
+    "puppeteer@25.16.0": true
+  }
+}
