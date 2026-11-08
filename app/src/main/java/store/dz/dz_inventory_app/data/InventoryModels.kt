@@ -38,3 +38,23 @@ data class ProductDetails(
     val product: Product,
     val lots: List<Lot>
 )
+
+data class SaleLine(
+    val detailId: Long,
+    val productId: Long,
+    val product: String,
+    val size: String,
+    val quantity: Int,
+    val unitPrice: Double,
+    val subtotal: Double
+)
+
+data class Sale(
+    val id: Long,
+    val date: String,
+    val status: String,
+    val notes: String?,
+    val units: Int,
+    val total: Double,
+    val lines: List<SaleLine>
+)
