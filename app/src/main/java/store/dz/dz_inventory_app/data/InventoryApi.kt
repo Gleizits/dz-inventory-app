@@ -118,6 +118,33 @@ class InventoryApi(
         }
     }
 
+    suspend fun listSales(): List<Sale> {
+        return (get("/api/ventas?limite=100&offset=0") as JSONArray)
+            .toList { it.toSale() }
+    }
+
+    suspend fun createSale(
+        productId: Long,
+        size: String,
+        quantity: Int,
+        unitPrice: Double,
+        notes: String? = null
+    ): Sale {
+        return post("/api/ventas", JSONObject().apply {
+            putNullable("notas", notes)
+            put("lineas", JSONArray().put(JSONObject().apply {
+                put("producto_id", productId)
+                put("talla", size)
+                put("cantidad", quantity)
+                put("precio_unitario", unitPrice)
+            }))
+        }).toSale()
+    }
+
+    suspend fun annulSale(id: Long): Sale {
+        return post("/api/ventas/$id/anular", JSONObject()).toSale()
+    }
+
     private fun get(path: String): Any = request(path, "GET")
 
     private fun post(path: String, body: JSONObject): JSONObject =
@@ -225,6 +252,26 @@ private fun JSONObject.toLot() = Lot(
     totalCost = getDouble("costo_total"),
     shippingCost = getDouble("costo_envio"),
     unitCost = getDouble("costo_unitario")
+)
+
+private fun JSONObject.toSale() = Sale(
+    id = getLong("id"),
+    date = getString("fecha"),
+    status = getString("estado"),
+    notes = optNullableString("notas"),
+    units = getInt("unidades"),
+    total = getDouble("total"),
+    lines = getJSONArray("lineas").toList { it.toSaleLine() }
+)
+
+private fun JSONObject.toSaleLine() = SaleLine(
+    detailId = getLong("detalle_id"),
+    productId = getLong("producto_id"),
+    product = getString("producto"),
+    size = getString("talla"),
+    quantity = getInt("cantidad"),
+    unitPrice = getDouble("precio_unitario"),
+    subtotal = getDouble("subtotal")
 )
 
 private fun JSONObject.putNullable(key: String, value: String?) {
