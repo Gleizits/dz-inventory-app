@@ -9,11 +9,11 @@ import (
 // Reporte es el resultado de "ventas por rango de fechas": lo que la app
 // muestra y exporta a PDF.
 type Reporte struct {
-	Desde       string          `json:"desde"`
-	Hasta       string          `json:"hasta"`
-	Total       report.Total    `json:"total"`
-	PorProducto []report.Linea  `json:"por_producto"`
-	PorDia      []ReporteDia    `json:"por_dia"`
+	Desde       string         `json:"desde"`
+	Hasta       string         `json:"hasta"`
+	Total       report.Total   `json:"total"`
+	PorProducto []report.Linea `json:"por_producto"`
+	PorDia      []ReporteDia   `json:"por_dia"`
 }
 
 // ReporteDia es una fila del desglose diario.
@@ -53,7 +53,7 @@ func (s *Store) ReporteVentas(ctx context.Context, desde, hasta string) (Reporte
 		        SUM(dv.cantidad * dv.precio_unitario)::float8
 		   FROM detalle_venta dv
 		   JOIN venta v    ON v.id = dv.venta_id AND v.estado = 'activa'
-		   JOIN producto p ON p.id = dv.producto_id
+		   JOIN producto p ON p.id = dv.producto_id AND p.activo
 		   JOIN categoria c ON c.id = p.categoria_id
 		  WHERE v.fecha BETWEEN $1 AND $2
 		  GROUP BY dv.producto_id, p.nombre, c.nombre
@@ -78,11 +78,14 @@ func (s *Store) ReporteVentas(ctx context.Context, desde, hasta string) (Reporte
 
 	// 2) costo promedio ponderado por producto (lotes hasta el fin del rango)
 	costos, err := s.pool.Query(ctx,
-		`SELECT producto_id,
+		`SELECT p.id,
 		        SUM(costo_total + costo_envio)::float8 / NULLIF(SUM(unidades), 0)::float8
-		   FROM lote
-		  WHERE fecha <= $1
-		  GROUP BY producto_id`, h)
+		   FROM lote l
+		   JOIN producto p
+		     ON p.activo
+		    AND (l.producto_id = p.id OR (l.producto_id IS NULL AND p.lote_id = l.id))
+		  WHERE l.fecha <= $1
+		  GROUP BY p.id`, h)
 	if err != nil {
 		return Reporte{}, err
 	}
@@ -110,7 +113,11 @@ func (s *Store) ReporteVentas(ctx context.Context, desde, hasta string) (Reporte
 	// 4) conteo de ventas del rango (para el total)
 	var nVentas int
 	if err := s.pool.QueryRow(ctx,
-		`SELECT count(*) FROM venta WHERE estado = 'activa' AND fecha BETWEEN $1 AND $2`,
+		`SELECT count(DISTINCT v.id)
+		   FROM venta v
+		   JOIN detalle_venta dv ON dv.venta_id = v.id
+		   JOIN producto p ON p.id = dv.producto_id AND p.activo
+		  WHERE v.estado = 'activa' AND v.fecha BETWEEN $1 AND $2`,
 		d, h).Scan(&nVentas); err != nil {
 		return Reporte{}, err
 	}
@@ -122,6 +129,7 @@ func (s *Store) ReporteVentas(ctx context.Context, desde, hasta string) (Reporte
 		        SUM(dv.cantidad * dv.precio_unitario)::float8
 		   FROM detalle_venta dv
 		   JOIN venta v ON v.id = dv.venta_id AND v.estado = 'activa'
+		   JOIN producto p ON p.id = dv.producto_id AND p.activo
 		  WHERE v.fecha BETWEEN $1 AND $2
 		  GROUP BY 1, 2
 		  ORDER BY 1`, d, h)

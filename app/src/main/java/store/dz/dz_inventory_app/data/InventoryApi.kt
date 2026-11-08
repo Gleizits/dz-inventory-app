@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
@@ -14,8 +16,30 @@ import java.net.URLEncoder
 class InventoryApi(
     private val baseUrl: String = "http://127.0.0.1:8080"
 ) {
+    fun photoUrl(photoPath: String?): String? =
+        photoPath?.let { "$baseUrl/api/fotos/$it" }
+
     suspend fun listCategories(): List<Category> = get("/api/categorias").let { json ->
         (json as JSONArray).toList { it.toCategory() }
+    }
+
+    suspend fun listLots(categoryId: Long? = null): List<Lot> {
+        val query = categoryId?.let { "?categoria_id=$it" } ?: ""
+        return (get("/api/lotes$query") as JSONArray).toList { it.toLot() }
+    }
+
+    suspend fun createLot(
+        categoryId: Long,
+        units: Int,
+        totalCost: Double,
+        shippingCost: Double
+    ): Lot {
+        return post("/api/lotes", JSONObject().apply {
+            put("categoria_id", categoryId)
+            put("unidades", units)
+            put("costo_total", totalCost)
+            put("costo_envio", shippingCost)
+        }).toLot()
     }
 
     suspend fun createCategory(name: String, description: String?): Category {
@@ -52,17 +76,18 @@ class InventoryApi(
 
     suspend fun createProduct(
         categoryId: Long,
+        lotId: Long,
         name: String,
         description: String?,
-        stock: Map<String, Int>,
-        lot: LotDraft?
+        stock: Map<String, Int>
     ): ProductDetails {
         val body = JSONObject().apply {
             put("categoria_id", categoryId)
+            put("lote_id", lotId)
+            put("unidades_lote", stock.values.sum())
             put("nombre", name)
             putNullable("descripcion", description)
             put("stock", stock.toJson())
-            if (lot != null) put("lote", lot.toJson())
         }
         return post("/api/productos", body).toProductDetails()
     }
@@ -93,7 +118,7 @@ class InventoryApi(
         productId: Long,
         uri: Uri,
         contentResolver: ContentResolver
-    ) {
+    ) = withContext(Dispatchers.IO) {
         val type = contentResolver.getType(uri) ?: "image/jpeg"
         val fileName = "foto_${System.currentTimeMillis()}.jpg"
         val boundary = "----DZInventory${System.currentTimeMillis()}"
@@ -157,31 +182,32 @@ class InventoryApi(
         return (get(query) as JSONObject).toSalesReport()
     }
 
-    private fun get(path: String): Any = request(path, "GET")
+    private suspend fun get(path: String): Any = request(path, "GET")
 
-    private fun post(path: String, body: JSONObject): JSONObject =
+    private suspend fun post(path: String, body: JSONObject): JSONObject =
         request(path, "POST", body.toString()) as JSONObject
 
-    private fun put(path: String, body: JSONObject): JSONObject =
+    private suspend fun put(path: String, body: JSONObject): JSONObject =
         request(path, "PUT", body.toString()) as JSONObject
 
-    private fun delete(path: String) {
+    private suspend fun delete(path: String) {
         request(path, "DELETE")
     }
 
-    private fun request(path: String, method: String, body: String? = null): Any {
-        val connection = openConnection(path, method)
-        try {
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.outputStream.use { it.write(body.toByteArray()) }
+    private suspend fun request(path: String, method: String, body: String? = null): Any =
+        withContext(Dispatchers.IO) {
+            val connection = openConnection(path, method)
+            try {
+                if (body != null) {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(body.toByteArray()) }
+                }
+                readResponse(connection)
+            } finally {
+                connection.disconnect()
             }
-            return readResponse(connection)
-        } finally {
-            connection.disconnect()
         }
-    }
 
     private fun openConnection(path: String, method: String): HttpURLConnection {
         return (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
@@ -238,6 +264,8 @@ private fun JSONObject.toProduct() = Product(
     id = getLong("id"),
     categoryId = getLong("categoria_id"),
     category = getString("categoria"),
+    lotId = getLong("lote_id"),
+    lotUnits = getInt("unidades_lote"),
     name = getString("nombre"),
     description = optNullableString("descripcion"),
     photoPath = optNullableString("foto_path"),
@@ -258,12 +286,16 @@ private fun JSONObject.toStock() = SizeStock(
 
 private fun JSONObject.toLot() = Lot(
     id = getLong("id"),
+    categoryId = getLong("categoria_id"),
+    category = optString("categoria"),
     productId = getLong("producto_id"),
     date = getString("fecha"),
     units = getInt("unidades"),
     totalCost = getDouble("costo_total"),
     shippingCost = getDouble("costo_envio"),
-    unitCost = getDouble("costo_unitario")
+    unitCost = getDouble("costo_unitario"),
+    assignedUnits = optInt("unidades_asignadas", 0),
+    availableUnits = optInt("unidades_disponibles", getInt("unidades"))
 )
 
 private fun JSONObject.toSale() = Sale(

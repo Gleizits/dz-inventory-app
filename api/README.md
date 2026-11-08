@@ -54,13 +54,14 @@ Errores: siempre `{"error": "...", "codigo": "...", "detalles": {...}}`
 | PUT | `/api/categorias/{id}` | actualiza |
 | DELETE | `/api/categorias/{id}` | desactiva (409 si tiene productos activos) |
 | GET | `/api/productos?q=&categoria_id=&con_stock=&incluir_inactivos=` | catálogo con stock por talla |
-| POST | `/api/productos` | crea `{categoria_id, nombre, descripcion?, stock:{S,M,L,XL}, lote?}` |
+| POST | `/api/productos` | crea `{categoria_id, lote_id, unidades_lote, nombre, descripcion?, stock:{S,M,L,XL}}` |
 | GET | `/api/productos/{id}` | producto + últimos 5 lotes |
 | PUT | `/api/productos/{id}` | actualiza nombre/descripción/categoría |
 | DELETE | `/api/productos/{id}` | borrado lógico |
 | POST | `/api/productos/{id}/foto` | multipart campo `foto` → devuelve `foto_url` y `foto_thumb_url` |
 | GET | `/api/fotos/{archivo}` | sirve foto o miniatura (sin API key) |
-| POST | `/api/lotes` | compra `{producto_id, fecha?, unidades?, costo_total, costo_envio, stock?}` |
+| POST | `/api/lotes` | crea un lote por categoría `{categoria_id, fecha?, unidades, costo_total, costo_envio}` o agrega stock a un producto existente con `{producto_id, fecha?, unidades, costo_total, costo_envio, stock?}` |
+| GET | `/api/lotes?categoria_id=` | lista lotes y unidades disponibles para asignar productos |
 | GET | `/api/ventas?desde=&hasta=&limite=&offset=` | ventas con líneas |
 | POST | `/api/ventas` | registra venta (valida stock en la API) |
 | POST | `/api/ventas/{id}/anular` | anula y repone stock |

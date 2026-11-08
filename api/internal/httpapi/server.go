@@ -57,6 +57,7 @@ func New(st *store.Store, ca *cache.Cache, cfg config.Config, log *slog.Logger) 
 		r.Post("/productos/{id}/foto", s.subirFoto)
 
 		r.Post("/lotes", s.crearLote)
+		r.Get("/lotes", s.listarLotes)
 
 		r.Get("/ventas", s.listarVentas)
 		r.Post("/ventas", s.crearVenta)
@@ -74,8 +75,8 @@ func New(st *store.Store, ca *cache.Cache, cfg config.Config, log *slog.Logger) 
 // ---------------------------------------------------------------------------
 
 type errorResp struct {
-	Error   string `json:"error"`
-	Codigo  string `json:"codigo"`
+	Error    string `json:"error"`
+	Codigo   string `json:"codigo"`
 	Detalles any    `json:"detalles,omitempty"`
 }
 

@@ -218,6 +218,12 @@ private fun SaleDialog(
     var quantity by remember { mutableStateOf("1") }
     var price by remember { mutableStateOf("") }
     var productMenuOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedProduct?.id) {
+        selectedSize = selectedProduct?.stock
+            ?.firstOrNull { it.quantity > 0 }
+            ?.size
+            ?: "S"
+    }
     val stockForSize = selectedProduct?.stock?.firstOrNull { it.size == selectedSize }?.quantity ?: 0
     val parsedQuantity = quantity.toIntOrNull() ?: 0
     val parsedPrice = price.toDoubleOrNull()
@@ -248,6 +254,9 @@ private fun SaleDialog(
                         FilterChip(
                             selected = selectedSize == size,
                             onClick = { selectedSize = size },
+                            enabled = (selectedProduct?.stock
+                                ?.firstOrNull { it.size == size }
+                                ?.quantity ?: 0) > 0,
                             label = { Text(size) }
                         )
                     }

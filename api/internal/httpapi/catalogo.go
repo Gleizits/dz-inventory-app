@@ -87,11 +87,13 @@ func (s *Server) desactivarCategoria(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type productoBody struct {
-	CategoriaID int64           `json:"categoria_id"`
-	Nombre      string          `json:"nombre"`
-	Descripcion *string         `json:"descripcion"`
-	Stock       map[string]int  `json:"stock"`
-	Lote        *store.LoteInput `json:"lote"`
+	CategoriaID  int64            `json:"categoria_id"`
+	LoteID       *int64           `json:"lote_id"`
+	UnidadesLote int              `json:"unidades_lote"`
+	Nombre       string           `json:"nombre"`
+	Descripcion  *string          `json:"descripcion"`
+	Stock        map[string]int   `json:"stock"`
+	Lote         *store.LoteInput `json:"lote"`
 }
 
 type productoResp struct {
@@ -152,11 +154,13 @@ func (s *Server) crearProducto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, lotes, err := s.store.CrearProducto(r.Context(), store.ProductoInput{
-		CategoriaID: b.CategoriaID,
-		Nombre:      b.Nombre,
-		Descripcion: b.Descripcion,
-		Stock:       b.Stock,
-		Lote:        b.Lote,
+		CategoriaID:  b.CategoriaID,
+		LoteID:       b.LoteID,
+		UnidadesLote: b.UnidadesLote,
+		Nombre:       b.Nombre,
+		Descripcion:  b.Descripcion,
+		Stock:        b.Stock,
+		Lote:         b.Lote,
 	})
 	if err != nil {
 		s.traducirError(w, err)

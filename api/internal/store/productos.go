@@ -21,6 +21,8 @@ type Producto struct {
 	ID            int64        `json:"id"`
 	CategoriaID   int64        `json:"categoria_id"`
 	Categoria     string       `json:"categoria"`
+	LoteID        int64        `json:"lote_id"`
+	UnidadesLote  int          `json:"unidades_lote"`
 	Nombre        string       `json:"nombre"`
 	Descripcion   *string      `json:"descripcion"`
 	FotoPath      *string      `json:"foto_path"`
@@ -33,14 +35,18 @@ type Producto struct {
 
 // Lote es una compra de prendas: de ahí sale el costo por unidad.
 type Lote struct {
-	ID           int64   `json:"id"`
-	ProductoID   int64   `json:"producto_id"`
-	Fecha        string  `json:"fecha"`
-	Unidades     int     `json:"unidades"`
-	CostoTotal   float64 `json:"costo_total"`
-	CostoEnvio   float64 `json:"costo_envio"`
+	ID            int64   `json:"id"`
+	CategoriaID   int64   `json:"categoria_id"`
+	Categoria     string  `json:"categoria"`
+	ProductoID    int64   `json:"producto_id"`
+	Fecha         string  `json:"fecha"`
+	Unidades      int     `json:"unidades"`
+	CostoTotal    float64 `json:"costo_total"`
+	CostoEnvio    float64 `json:"costo_envio"`
 	CostoUnitario float64 `json:"costo_unitario"`
-	CreadoEn     string  `json:"creado_en"`
+	CreadoEn      string  `json:"creado_en"`
+	Asignadas     int     `json:"unidades_asignadas"`
+	Disponibles   int     `json:"unidades_disponibles"`
 }
 
 // FiltroProductos para el listado del catálogo.
@@ -53,23 +59,26 @@ type FiltroProductos struct {
 
 // ProductoInput es lo que la app manda al crear/actualizar una prenda.
 type ProductoInput struct {
-	CategoriaID int64
-	Nombre      string
-	Descripcion *string
-	Stock       map[string]int // talla -> unidades del lote inicial
-	Lote        *LoteInput     // costo del lote inicial (opcional)
+	CategoriaID  int64
+	Nombre       string
+	Descripcion  *string
+	Stock        map[string]int // talla -> unidades del lote inicial
+	Lote         *LoteInput     // costo del lote inicial (opcional)
+	LoteID       *int64         // lote existente de la categoría
+	UnidadesLote int            // unidades asignadas de un lote existente
 }
 
 // LoteInput es una compra de prendas.
 type LoteInput struct {
-	Fecha      string         `json:"fecha"`      // opcional, AAAA-MM-DD
-	Unidades   int            `json:"unidades"`   // requerido si no viene Stock
+	Fecha      string         `json:"fecha"`    // opcional, AAAA-MM-DD
+	Unidades   int            `json:"unidades"` // requerido si no viene Stock
 	CostoTotal float64        `json:"costo_total"`
 	CostoEnvio float64        `json:"costo_envio"`
 	Stock      map[string]int `json:"stock"` // opcional: reparto del lote por talla
 }
 
-const colsProducto = `p.id, p.categoria_id, c.nombre, p.nombre, p.descripcion, p.foto_path, p.activo,
+const colsProducto = `p.id, p.categoria_id, c.nombre, COALESCE(p.lote_id, 0), COALESCE(p.unidades_lote, 0),
+	p.nombre, p.descripcion, p.foto_path, p.activo,
 	to_char(p.creado_en, 'YYYY-MM-DD HH24:MI:SS'), to_char(p.actualizado_en, 'YYYY-MM-DD HH24:MI:SS')`
 
 // ListarProductos devuelve el catálogo con su stock por talla.
@@ -151,30 +160,72 @@ func (s *Store) CrearProducto(ctx context.Context, in ProductoInput) (Producto, 
 	if err := validarStockMap(in.Stock); err != nil {
 		return Producto{}, nil, err
 	}
+	if in.LoteID != nil {
+		if in.UnidadesLote <= 0 {
+			in.UnidadesLote = sumaStock(in.Stock)
+		}
+		if in.UnidadesLote != sumaStock(in.Stock) {
+			return Producto{}, nil, &ErrorValidacion{Campo: "unidades_lote",
+				Mensaje: fmt.Sprintf("las unidades del producto (%d) no coinciden con la suma por talla (%d)",
+					in.UnidadesLote, sumaStock(in.Stock))}
+		}
+	}
 
 	var nuevoID int64
 	err := s.transaccion(ctx, func(tx pgx.Tx) error {
 		var activa bool
-		err := tx.QueryRow(ctx, `SELECT activo FROM categoria WHERE id = $1`, in.CategoriaID).Scan(&activa)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &ErrorValidacion{Campo: "categoria_id", Mensaje: "la categoría no existe"}
-		}
-		if err != nil {
-			return err
+		if in.LoteID != nil {
+			err := tx.QueryRow(ctx,
+				`SELECT c.id, c.activo
+				   FROM lote l JOIN categoria c ON c.id = l.categoria_id
+				  WHERE l.id = $1`, *in.LoteID).
+				Scan(&in.CategoriaID, &activa)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return &ErrorValidacion{Campo: "lote_id", Mensaje: "el lote no existe"}
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			err := tx.QueryRow(ctx, `SELECT activo FROM categoria WHERE id = $1`, in.CategoriaID).Scan(&activa)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return &ErrorValidacion{Campo: "categoria_id", Mensaje: "la categoría no existe"}
+			}
+			if err != nil {
+				return err
+			}
 		}
 		if !activa {
 			return &ErrorValidacion{Campo: "categoria_id", Mensaje: "la categoría está desactivada"}
 		}
+		if in.LoteID != nil {
+			var asignadas, disponibles int
+			err := tx.QueryRow(ctx,
+				`SELECT COALESCE(SUM(unidades_lote), 0)::int, l.unidades
+				   FROM lote l
+				   LEFT JOIN producto p ON p.lote_id = l.id
+				  WHERE l.id = $1
+				  GROUP BY l.unidades`, *in.LoteID).
+				Scan(&asignadas, &disponibles)
+			if err != nil {
+				return err
+			}
+			if asignadas+in.UnidadesLote > disponibles {
+				return &ErrorValidacion{Campo: "lote_id",
+					Mensaje: fmt.Sprintf("el lote solo tiene %d unidades disponibles", disponibles-asignadas)}
+			}
+		}
 
 		var id int64
-		err = tx.QueryRow(ctx,
-			`INSERT INTO producto (categoria_id, nombre, descripcion) VALUES ($1, $2, $3) RETURNING id`,
-			in.CategoriaID, in.Nombre, in.Descripcion).Scan(&id)
-		if esDuplicado(err) {
+		insertErr := tx.QueryRow(ctx,
+			`INSERT INTO producto (categoria_id, lote_id, unidades_lote, nombre, descripcion)
+			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			in.CategoriaID, in.LoteID, nullablePositive(in.UnidadesLote), in.Nombre, in.Descripcion).Scan(&id)
+		if esDuplicado(insertErr) {
 			return fmt.Errorf("ya existe una prenda llamada %q en esa categoría: %w", in.Nombre, ErrConflicto)
 		}
-		if err != nil {
-			return err
+		if insertErr != nil {
+			return insertErr
 		}
 		nuevoID = id
 
@@ -286,6 +337,89 @@ func (s *Store) CrearLote(ctx context.Context, productoID int64, in LoteInput) (
 	return l, err
 }
 
+// CrearLoteCategoria crea un lote vacío que luego puede recibir varias prendas.
+func (s *Store) CrearLoteCategoria(ctx context.Context, categoriaID int64, in LoteInput) (Lote, error) {
+	if in.Unidades <= 0 {
+		return Lote{}, &ErrorValidacion{Campo: "unidades", Mensaje: "las unidades del lote deben ser mayores a cero"}
+	}
+	if in.CostoTotal < 0 || in.CostoEnvio < 0 {
+		return Lote{}, &ErrorValidacion{Campo: "costo_total", Mensaje: "los costos no pueden ser negativos"}
+	}
+	fecha := time.Now()
+	if in.Fecha != "" {
+		f, err := time.ParseInLocation("2006-01-02", in.Fecha, time.Local)
+		if err != nil {
+			return Lote{}, &ErrorValidacion{Campo: "fecha", Mensaje: "fecha inválida"}
+		}
+		fecha = f
+	}
+	var l Lote
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO lote (categoria_id, fecha, unidades, costo_total, costo_envio)
+		 SELECT id, $2, $3, $4, $5 FROM categoria
+		  WHERE id = $1 AND activo
+		 RETURNING id, categoria_id, 0, to_char(fecha,'YYYY-MM-DD'), unidades,
+		           costo_total::float8, costo_envio::float8,
+		           ROUND((costo_total + costo_envio) / unidades, 2)::float8,
+		           to_char(creado_en,'YYYY-MM-DD HH24:MI:SS')`,
+		categoriaID, fecha, in.Unidades, in.CostoTotal, in.CostoEnvio).
+		Scan(&l.ID, &l.CategoriaID, &l.ProductoID, &l.Fecha, &l.Unidades,
+			&l.CostoTotal, &l.CostoEnvio, &l.CostoUnitario, &l.CreadoEn)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Lote{}, &ErrorValidacion{Campo: "categoria_id", Mensaje: "la categoría no existe o está desactivada"}
+	}
+	l.Disponibles = l.Unidades
+	return l, err
+}
+
+// ListarLotesCategoria devuelve lotes disponibles para agregar prendas.
+func (s *Store) ListarLotesCategoria(ctx context.Context, categoriaID *int64) ([]Lote, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT l.id, l.categoria_id, c.nombre, COALESCE(l.producto_id, 0),
+		        to_char(l.fecha,'YYYY-MM-DD'), l.unidades,
+		        l.costo_total::float8, l.costo_envio::float8,
+		        ROUND((l.costo_total + l.costo_envio) / l.unidades, 2)::float8,
+		        to_char(l.creado_en,'YYYY-MM-DD HH24:MI:SS'),
+		        COALESCE(SUM(p.unidades_lote), 0)::int,
+		        l.unidades - COALESCE(SUM(p.unidades_lote), 0)::int
+		   FROM lote l
+		   JOIN categoria c ON c.id = l.categoria_id
+		   LEFT JOIN producto p ON p.lote_id = l.id AND p.activo
+		  WHERE ($1::bigint IS NULL OR l.categoria_id = $1)
+		  GROUP BY l.id, c.nombre
+		  ORDER BY l.fecha DESC, l.id DESC`, categoriaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Lote{}
+	for rows.Next() {
+		var l Lote
+		if err := rows.Scan(&l.ID, &l.CategoriaID, &l.Categoria, &l.ProductoID,
+			&l.Fecha, &l.Unidades, &l.CostoTotal, &l.CostoEnvio,
+			&l.CostoUnitario, &l.CreadoEn, &l.Asignadas, &l.Disponibles); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+func sumaStock(stock map[string]int) int {
+	total := 0
+	for _, n := range stock {
+		total += n
+	}
+	return total
+}
+
+func nullablePositive(n int) any {
+	if n <= 0 {
+		return nil
+	}
+	return n
+}
+
 // crearLoteEn inserta el lote dentro de una transacción existente y, si hay
 // distribución por talla, suma esas unidades al stock.
 func crearLoteEn(ctx context.Context, tx pgx.Tx, productoID int64, in LoteInput, stock map[string]int) error {
@@ -355,7 +489,7 @@ func sumarStock(ctx context.Context, tx pgx.Tx, productoID int64, stock map[stri
 // listarLotes devuelve los lotes más recientes de una prenda.
 func (s *Store) listarLotes(ctx context.Context, productoID int64, limite int) ([]Lote, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, producto_id, to_char(fecha,'YYYY-MM-DD'), unidades,
+		`SELECT id, categoria_id, COALESCE(producto_id, 0), to_char(fecha,'YYYY-MM-DD'), unidades,
 		        costo_total::float8, costo_envio::float8,
 		        ROUND((costo_total + costo_envio) / unidades, 2)::float8,
 		        to_char(creado_en,'YYYY-MM-DD HH24:MI:SS')
@@ -369,7 +503,7 @@ func (s *Store) listarLotes(ctx context.Context, productoID int64, limite int) (
 	out := []Lote{}
 	for rows.Next() {
 		var l Lote
-		if err := rows.Scan(&l.ID, &l.ProductoID, &l.Fecha, &l.Unidades, &l.CostoTotal,
+		if err := rows.Scan(&l.ID, &l.CategoriaID, &l.ProductoID, &l.Fecha, &l.Unidades, &l.CostoTotal,
 			&l.CostoEnvio, &l.CostoUnitario, &l.CreadoEn); err != nil {
 			return nil, err
 		}
@@ -456,6 +590,7 @@ func escanearProducto(row escaner) (Producto, error) {
 }
 
 func escanearProductoRow(row escaner, p *Producto) error {
-	return row.Scan(&p.ID, &p.CategoriaID, &p.Categoria, &p.Nombre, &p.Descripcion,
+	return row.Scan(&p.ID, &p.CategoriaID, &p.Categoria, &p.LoteID, &p.UnidadesLote,
+		&p.Nombre, &p.Descripcion,
 		&p.FotoPath, &p.Activo, &p.CreadoEn, &p.ActualizadoEn)
 }
