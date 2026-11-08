@@ -1,0 +1,56 @@
+%% DZ Urban Style — Diagrama LÓGICO del modelo de datos (3FN)
+%% Entidades, atributos y relaciones. Sin detalles de implementación.
+erDiagram
+    CATEGORIA ||--o{ PRODUCTO : "agrupa"
+    PRODUCTO ||--o{ LOTE : "se repone en"
+    PRODUCTO ||--o{ PRODUCTO_TALLA : "tiene stock en"
+    PRODUCTO ||--o{ DETALLE_VENTA : "aparece en"
+    VENTA ||--|{ DETALLE_VENTA : "compuesta por"
+
+    CATEGORIA {
+        entero id PK "identificador"
+        texto nombre "nombre libre, único"
+        texto descripcion "opcional"
+        booleano activo "borrado lógico"
+    }
+
+    PRODUCTO {
+        entero id PK "identificador"
+        entero categoria_id FK "pertenece a categoría"
+        texto nombre "nombre libre, único por categoría"
+        texto descripcion "opcional"
+        texto foto_path "clave de la foto"
+        booleano activo "borrado lógico"
+    }
+
+    LOTE {
+        entero id PK "identificador"
+        entero producto_id FK "compra de este producto"
+        fecha fecha "fecha de compra"
+        entero unidades "prendas del lote"
+        dinero costo_total "costo de las prendas"
+        dinero costo_envio "costo del envío"
+        dinero costo_unitario "DERIVADO: (total+envío)/unidades"
+    }
+
+    PRODUCTO_TALLA {
+        entero producto_id PK "producto"
+        texto talla PK "S, M, L o XL"
+        entero cantidad "stock actual"
+    }
+
+    VENTA {
+        entero id PK "identificador"
+        fecha_hora fecha "momento de la venta"
+        texto estado "activa o anulada"
+        texto notas "opcional"
+    }
+
+    DETALLE_VENTA {
+        entero id PK "identificador"
+        entero venta_id FK "venta a la que pertenece"
+        entero producto_id FK "producto vendido"
+        texto talla "talla vendida"
+        entero cantidad "unidades vendidas"
+        dinero precio_unitario "precio de venta del momento"
+    }

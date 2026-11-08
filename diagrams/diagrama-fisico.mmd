@@ -1,0 +1,63 @@
+%% DZ Urban Style — Diagrama FÍSICO de la base de datos (PostgreSQL 17)
+%% Tablas, columnas, tipos, claves primarias, foráneas e índices.
+erDiagram
+    categoria ||--o{ producto : "categoria_id"
+    producto ||--o{ lote : "producto_id"
+    producto ||--o{ producto_talla : "producto_id"
+    producto ||--o{ detalle_venta : "producto_id"
+    venta ||--|{ detalle_venta : "venta_id"
+
+    categoria {
+        BIGINT id PK "GENERATED ALWAYS AS IDENTITY"
+        TEXT nombre UK "NOT NULL, sin espacios de más"
+        TEXT descripcion "NULL permitido"
+        BOOLEAN activo "DEFAULT true"
+        TIMESTAMPTZ creado_en "DEFAULT now()"
+        TIMESTAMPTZ actualizado_en "trigger"
+    }
+
+    producto {
+        BIGINT id PK "GENERATED ALWAYS AS IDENTITY"
+        BIGINT categoria_id FK "REFERENCES categoria(id) RESTRICT"
+        TEXT nombre "UNIQUE (categoria_id, nombre)"
+        TEXT descripcion "NULL permitido"
+        TEXT foto_path "disco en dev / Storage en prod"
+        BOOLEAN activo "DEFAULT true"
+        TIMESTAMPTZ creado_en "DEFAULT now()"
+        TIMESTAMPTZ actualizado_en "trigger"
+    }
+
+    lote {
+        BIGINT id PK "GENERATED ALWAYS AS IDENTITY"
+        BIGINT producto_id FK "REFERENCES producto(id) RESTRICT"
+        DATE fecha "DEFAULT current_date"
+        INTEGER unidades "CHECK > 0"
+        NUMERIC costo_total "CHECK >= 0, precision 12,2"
+        NUMERIC costo_envio "CHECK >= 0, precision 12,2"
+        TIMESTAMPTZ creado_en "DEFAULT now()"
+    }
+
+    producto_talla {
+        BIGINT producto_id PK "REFERENCES producto(id) CASCADE"
+        talla_t talla PK "ENUM S, M, L, XL"
+        INTEGER cantidad "CHECK >= 0"
+        TIMESTAMPTZ actualizado_en "DEFAULT now()"
+    }
+
+    venta {
+        BIGINT id PK "GENERATED ALWAYS AS IDENTITY"
+        TIMESTAMPTZ fecha "DEFAULT now()"
+        estado_venta_t estado "ENUM activa, anulada"
+        TEXT notas "NULL permitido"
+        TIMESTAMPTZ creado_en "DEFAULT now()"
+        TIMESTAMPTZ actualizado_en "trigger"
+    }
+
+    detalle_venta {
+        BIGINT id PK "GENERATED ALWAYS AS IDENTITY"
+        BIGINT venta_id FK "REFERENCES venta(id) CASCADE"
+        BIGINT producto_id FK "REFERENCES producto(id) RESTRICT"
+        talla_t talla "ENUM S, M, L, XL"
+        INTEGER cantidad "CHECK > 0"
+        NUMERIC precio_unitario "CHECK >= 0, precision 12,2"
+    }
