@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import store.dz.dz_inventory_app.ui.theme.DzinventoryappTheme
 import store.dz.dz_inventory_app.data.InventoryApi
 import store.dz.dz_inventory_app.ui.inventory.InventoryScreen
+import store.dz.dz_inventory_app.ui.sales.SalesScreen
 
 private const val PREFERENCES_NAME = "dz_inventory_preferences"
 private const val THEME_MODE_KEY = "theme_mode"
@@ -170,6 +171,10 @@ private fun InventoryApp(
                 AppDestination.INVENTARIO -> InventoryScreen(
                     api = api,
                     contentResolver = LocalContext.current.contentResolver,
+                    contentPadding = innerPadding
+                )
+                AppDestination.VENTAS -> SalesScreen(
+                    api = api,
                     contentPadding = innerPadding
                 )
                 else -> DestinationScreen(
