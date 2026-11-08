@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,7 +40,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import store.dz.dz_inventory_app.ui.theme.DzinventoryappTheme
+import store.dz.dz_inventory_app.data.InventoryApi
+import store.dz.dz_inventory_app.ui.inventory.InventoryScreen
 
 private const val PREFERENCES_NAME = "dz_inventory_preferences"
 private const val THEME_MODE_KEY = "theme_mode"
@@ -81,6 +85,7 @@ class MainActivity : ComponentActivity() {
 
             DzinventoryappTheme(darkTheme = darkTheme) {
                 InventoryApp(
+                    api = remember { InventoryApi() },
                     themeMode = themeMode,
                     onThemeModeChange = { selectedMode ->
                         themeMode = selectedMode
@@ -95,6 +100,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InventoryApp(
+    api: InventoryApi,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit
 ) {
@@ -160,10 +166,17 @@ private fun InventoryApp(
                 contentPadding = innerPadding
             )
         } else {
-            DestinationScreen(
-                destination = selectedDestination,
-                contentPadding = innerPadding
-            )
+            when (selectedDestination) {
+                AppDestination.INVENTARIO -> InventoryScreen(
+                    api = api,
+                    contentResolver = LocalContext.current.contentResolver,
+                    contentPadding = innerPadding
+                )
+                else -> DestinationScreen(
+                    destination = selectedDestination,
+                    contentPadding = innerPadding
+                )
+            }
         }
     }
 }
