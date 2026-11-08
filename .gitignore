@@ -1,15 +1,36 @@
+# Android / Gradle
 *.iml
 .gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
 /build
+local.properties
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+.kotlin/
+*.apk
+*.aab
+*.ap_
+*.keystore
+*.jks
+
+# IDE (Android Studio / IntelliJ)
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Secrets y configuración local (copia .env.example a .env)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Node — solo para Mermaid CLI (diagramas), nunca se sube node_modules
+node_modules/
+
+# Salidas generadas localmente
+/out/
+*.tmp
