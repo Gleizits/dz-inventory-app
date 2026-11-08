@@ -45,6 +45,7 @@ import store.dz.dz_inventory_app.ui.theme.DzinventoryappTheme
 import store.dz.dz_inventory_app.data.InventoryApi
 import store.dz.dz_inventory_app.ui.inventory.InventoryScreen
 import store.dz.dz_inventory_app.ui.sales.SalesScreen
+import store.dz.dz_inventory_app.ui.reports.ReportsScreen
 
 private const val PREFERENCES_NAME = "dz_inventory_preferences"
 private const val THEME_MODE_KEY = "theme_mode"
@@ -177,8 +178,8 @@ private fun InventoryApp(
                     api = api,
                     contentPadding = innerPadding
                 )
-                else -> DestinationScreen(
-                    destination = selectedDestination,
+                AppDestination.REPORTES -> ReportsScreen(
+                    api = api,
                     contentPadding = innerPadding
                 )
             }
