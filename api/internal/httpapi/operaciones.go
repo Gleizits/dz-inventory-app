@@ -12,12 +12,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type loteBody struct {
-	ProductoID int64             `json:"producto_id"`
-	Fecha      string            `json:"fecha"`
-	Unidades   int               `json:"unidades"`
-	CostoTotal float64           `json:"costo_total"`
-	CostoEnvio float64           `json:"costo_envio"`
-	Stock      map[string]int    `json:"stock"`
+	CategoriaID int64          `json:"categoria_id"`
+	ProductoID  int64          `json:"producto_id"`
+	Fecha       string         `json:"fecha"`
+	Unidades    int            `json:"unidades"`
+	CostoTotal  float64        `json:"costo_total"`
+	CostoEnvio  float64        `json:"costo_envio"`
+	Stock       map[string]int `json:"stock"`
 }
 
 func (s *Server) crearLote(w http.ResponseWriter, r *http.Request) {
@@ -25,8 +26,20 @@ func (s *Server) crearLote(w http.ResponseWriter, r *http.Request) {
 	if !leerJSON(w, r, &b) {
 		return
 	}
-	if b.ProductoID <= 0 {
+	if b.ProductoID <= 0 && b.CategoriaID <= 0 {
 		responderError(w, http.StatusBadRequest, "validacion", "producto_id inválido", nil)
+		return
+	}
+	if b.ProductoID <= 0 {
+		l, err := s.store.CrearLoteCategoria(r.Context(), b.CategoriaID, store.LoteInput{
+			Fecha: b.Fecha, Unidades: b.Unidades, CostoTotal: b.CostoTotal, CostoEnvio: b.CostoEnvio,
+		})
+		if err != nil {
+			s.traducirError(w, err)
+			return
+		}
+		s.cache.Invalidar(r.Context())
+		responderJSON(w, http.StatusCreated, l)
 		return
 	}
 	l, err := s.store.CrearLote(r.Context(), b.ProductoID, store.LoteInput{
@@ -42,6 +55,24 @@ func (s *Server) crearLote(w http.ResponseWriter, r *http.Request) {
 	}
 	s.cache.Invalidar(r.Context())
 	responderJSON(w, http.StatusCreated, l)
+}
+
+func (s *Server) listarLotes(w http.ResponseWriter, r *http.Request) {
+	var categoriaID *int64
+	if value := r.URL.Query().Get("categoria_id"); value != "" {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			responderError(w, http.StatusBadRequest, "validacion", "categoria_id inválido", nil)
+			return
+		}
+		categoriaID = &id
+	}
+	out, err := s.store.ListarLotesCategoria(r.Context(), categoriaID)
+	if err != nil {
+		s.traducirError(w, err)
+		return
+	}
+	responderJSON(w, http.StatusOK, out)
 }
 
 // ---------------------------------------------------------------------------

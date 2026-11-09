@@ -3,13 +3,14 @@
 package fotos
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
-	"image/jpeg"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/png"
 	"io"
 	"os"
@@ -29,9 +30,29 @@ const (
 // genera la miniatura de anchoThumb y escribe ambas en dir.
 // Devuelve el nombre del archivo principal (ej. "20261108-a1b2c3.jpg").
 func Guardar(dir string, r io.Reader, anchoMax, anchoThumb int) (string, error) {
+	procesada, err := Procesar(r, anchoMax, anchoThumb)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, procesada.Nombre), procesada.Principal, 0o644); err != nil {
+		return "", fmt.Errorf("no se pudo escribir la foto: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, Miniatura(procesada.Nombre)), procesada.Miniatura, 0o644); err != nil {
+		return "", fmt.Errorf("no se pudo escribir la miniatura: %w", err)
+	}
+	return procesada.Nombre, nil
+}
+
+type Procesada struct {
+	Nombre    string
+	Principal []byte
+	Miniatura []byte
+}
+
+func Procesar(r io.Reader, anchoMax, anchoThumb int) (Procesada, error) {
 	img, _, err := image.Decode(r)
 	if err != nil {
-		return "", fmt.Errorf("no se pudo leer la imagen (formato no soportado): %w", err)
+		return Procesada{}, fmt.Errorf("no se pudo leer la imagen (formato no soportado): %w", err)
 	}
 	if anchoMax <= 0 {
 		anchoMax = 1600
@@ -44,13 +65,19 @@ func Guardar(dir string, r io.Reader, anchoMax, anchoThumb int) (string, error) 
 	principal := redimensionar(img, anchoMax)
 	miniatura := redimensionar(img, anchoThumb)
 
-	if err := escribirJPEG(filepath.Join(dir, base), principal); err != nil {
-		return "", err
+	var principalBuf bytes.Buffer
+	if err := codificarJPEG(&principalBuf, principal); err != nil {
+		return Procesada{}, err
 	}
-	if err := escribirJPEG(filepath.Join(dir, Miniatura(base)), miniatura); err != nil {
-		return "", err
+	var miniaturaBuf bytes.Buffer
+	if err := codificarJPEG(&miniaturaBuf, miniatura); err != nil {
+		return Procesada{}, err
 	}
-	return base, nil
+	return Procesada{
+		Nombre:    base,
+		Principal: principalBuf.Bytes(),
+		Miniatura: miniaturaBuf.Bytes(),
+	}, nil
 }
 
 // Miniatura devuelve el nombre de la miniatura a partir del nombre principal.
@@ -97,10 +124,14 @@ func escribirJPEG(ruta string, img image.Image) error {
 		return fmt.Errorf("no se pudo escribir la foto: %w", err)
 	}
 	defer f.Close()
-	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: calidadJPEG}); err != nil {
+	if err := codificarJPEG(f, img); err != nil {
 		return fmt.Errorf("no se pudo convertir a JPEG: %w", err)
 	}
 	return nil
+}
+
+func codificarJPEG(w io.Writer, img image.Image) error {
+	return jpeg.Encode(w, img, &jpeg.Options{Quality: calidadJPEG})
 }
 
 // nombreArchivo = fecha + aleatorio, para que no haya colisiones ni se adivine.

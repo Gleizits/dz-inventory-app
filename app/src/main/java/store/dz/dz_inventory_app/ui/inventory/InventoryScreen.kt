@@ -2,10 +2,12 @@ package store.dz.dz_inventory_app.ui.inventory
 
 import android.content.ContentResolver
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -51,15 +54,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URL
 import java.io.File
 import store.dz.dz_inventory_app.data.Category
 import store.dz.dz_inventory_app.data.InventoryApi
-import store.dz.dz_inventory_app.data.LotDraft
+import store.dz.dz_inventory_app.data.Lot
 import store.dz.dz_inventory_app.data.Product
 
 @Composable
@@ -72,8 +80,10 @@ fun InventoryScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
+    var lots by remember { mutableStateOf<List<Lot>>(emptyList()) }
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
+    var selectedLotId by remember { mutableStateOf<Long?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshToken by remember { mutableLongStateOf(0L) }
@@ -81,7 +91,7 @@ fun InventoryScreen(
     var newCategoryDialog by remember { mutableStateOf(false) }
     var productDialog by remember { mutableStateOf<Product?>(null) }
     var newProductDialog by remember { mutableStateOf(false) }
-    var lotDialog by remember { mutableStateOf<Product?>(null) }
+    var newLotDialog by remember { mutableStateOf(false) }
     var photoProduct by remember { mutableStateOf<Product?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -99,6 +109,7 @@ fun InventoryScreen(
         error = null
         runCatching {
             categories = api.listCategories()
+            lots = api.listLots(selectedCategoryId)
             products = api.listProducts(selectedCategoryId)
         }.onFailure { showError(it.message ?: "No se pudo cargar el inventario") }
         loading = false
@@ -147,7 +158,14 @@ fun InventoryScreen(
         modifier = Modifier.padding(contentPadding),
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { newProductDialog = true }) {
+            FloatingActionButton(
+                onClick = { if (selectedLotId != null) newProductDialog = true },
+                containerColor = if (selectedLotId != null) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            ) {
                 Icon(Icons.Outlined.Add, contentDescription = "Nueva prenda")
             }
         }
@@ -175,14 +193,20 @@ fun InventoryScreen(
                 item {
                     FilterChip(
                         selected = selectedCategoryId == null,
-                        onClick = { selectedCategoryId = null },
+                        onClick = {
+                            selectedCategoryId = null
+                            selectedLotId = null
+                        },
                         label = { Text("Todas") }
                     )
                 }
                 items(categories) { category ->
                     FilterChip(
                         selected = selectedCategoryId == category.id,
-                        onClick = { selectedCategoryId = category.id },
+                        onClick = {
+                            selectedCategoryId = category.id
+                            selectedLotId = null
+                        },
                         label = { Text(category.name) },
                         trailingIcon = {
                             IconButton(onClick = { categoryDialog = category }) {
@@ -197,6 +221,43 @@ fun InventoryScreen(
                     }
                 }
             }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lotes", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                OutlinedButton(
+                    onClick = { newLotDialog = true },
+                    enabled = selectedCategoryId != null
+                ) {
+                    Text("Nuevo lote")
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(lots.filter { it.availableUnits > 0 }) { lot ->
+                    FilterChip(
+                        selected = selectedLotId == lot.id,
+                        onClick = { selectedLotId = lot.id },
+                        label = {
+                            Text("${lot.date} · ${lot.availableUnits}/${lot.units}")
+                        }
+                    )
+                }
+            }
+            if (selectedCategoryId == null && !loading) {
+                Text(
+                    "Selecciona una categoría para crear un lote.",
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (selectedLotId == null && !loading) {
+                Text(
+                    "Crea o selecciona un lote para agregar prendas.",
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else if (products.isEmpty()) {
@@ -209,8 +270,8 @@ fun InventoryScreen(
                     items(products, key = { it.id }) { product ->
                         ProductCard(
                             product = product,
+                            photoUrl = api.photoUrl(product.photoPath),
                             onEdit = { productDialog = product },
-                            onLot = { lotDialog = product },
                             onPhoto = { photoProduct = product; galleryLauncher.launch("image/*") },
                             onCamera = { launchCamera(product) },
                             onDelete = {
@@ -234,8 +295,12 @@ fun InventoryScreen(
             onSave = { name, description ->
                 scope.launch {
                     runCatching {
-                        if (categoryDialog == null) api.createCategory(name, description)
-                        else api.updateCategory(categoryDialog!!.id, name, description)
+                        if (categoryDialog == null) {
+                            val created = api.createCategory(name, description)
+                            selectedCategoryId = created.id
+                        } else {
+                            api.updateCategory(categoryDialog!!.id, name, description)
+                        }
                     }.onSuccess {
                         newCategoryDialog = false
                         categoryDialog = null
@@ -262,13 +327,13 @@ fun InventoryScreen(
     if (newProductDialog || productDialog != null) {
         ProductDialog(
             product = productDialog,
-            categories = categories,
+            lot = lots.firstOrNull { it.id == selectedLotId },
             onDismiss = { newProductDialog = false; productDialog = null },
-            onSave = { categoryId, name, description, stock, lot ->
+            onSave = { lotId, categoryId, name, description, stock ->
                 scope.launch {
                     runCatching {
                         if (productDialog == null) {
-                            api.createProduct(categoryId, name, description, stock, lot)
+                            api.createProduct(categoryId, lotId, name, description, stock)
                         } else {
                             api.updateProduct(productDialog!!.id, categoryId, name, description)
                         }
@@ -282,15 +347,18 @@ fun InventoryScreen(
         )
     }
 
-    if (lotDialog != null) {
-        LotDialog(
-            product = lotDialog!!,
-            onDismiss = { lotDialog = null },
-            onSave = { draft ->
+    if (newLotDialog) {
+        LotCreateDialog(
+            category = categories.firstOrNull { it.id == selectedCategoryId },
+            onDismiss = { newLotDialog = false },
+            onSave = { units, totalCost, shippingCost ->
                 scope.launch {
-                    runCatching { api.createLot(lotDialog!!.id, draft) }
-                        .onSuccess { lotDialog = null; refresh() }
-                        .onFailure { showError(it.message ?: "No se pudo registrar el lote") }
+                    runCatching {
+                        api.createLot(selectedCategoryId ?: 0L, units, totalCost, shippingCost)
+                    }.onSuccess {
+                        newLotDialog = false
+                        refresh()
+                    }.onFailure { showError(it.message ?: "No se pudo crear el lote") }
                 }
             }
         )
@@ -313,15 +381,17 @@ private fun EmptyInventory(onRetry: () -> Unit) {
 @Composable
 private fun ProductCard(
     product: Product,
+    photoUrl: String?,
     onEdit: () -> Unit,
-    onLot: () -> Unit,
     onPhoto: () -> Unit,
     onCamera: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                ProductPhoto(photoUrl = photoUrl)
+                Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(product.name, style = MaterialTheme.typography.titleLarge)
                     Text(product.category, style = MaterialTheme.typography.labelSmall)
@@ -341,21 +411,49 @@ private fun ProductCard(
                 }
             }
             Row(modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = onLot) { Text("Agregar lote") }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = onPhoto) {
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onPhoto) {
                     Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Foto")
                 }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = onCamera) {
+                IconButton(onClick = onCamera) {
                     Icon(Icons.Outlined.CameraAlt, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Cámara")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProductPhoto(photoUrl: String?) {
+    var bitmap by remember(photoUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(photoUrl) {
+        bitmap = photoUrl?.let { url ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                }.getOrNull()
+            }
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "Foto de la prenda",
+            modifier = Modifier
+                .width(64.dp)
+                .height(64.dp)
+                .clip(RoundedCornerShape(8.dp))
+        )
+    } else {
+        Icon(
+            Icons.Outlined.PhotoLibrary,
+            contentDescription = "Sin foto",
+            modifier = Modifier
+                .width(64.dp)
+                .height(64.dp)
+        )
     }
 }
 
@@ -396,11 +494,12 @@ private fun CategoryDialog(
 @Composable
 private fun ProductDialog(
     product: Product?,
-    categories: List<Category>,
+    lot: Lot?,
     onDismiss: () -> Unit,
-    onSave: (Long, String, String?, Map<String, Int>, LotDraft?) -> Unit
+    onSave: (Long, Long, String, String?, Map<String, Int>) -> Unit
 ) {
-    var categoryId by remember(product) { mutableStateOf(product?.categoryId ?: categories.firstOrNull()?.id) }
+    val categoryId = product?.categoryId ?: lot?.categoryId
+    val lotId = product?.lotId ?: lot?.id
     var name by remember(product) { mutableStateOf(product?.name ?: "") }
     var description by remember(product) { mutableStateOf(product?.description ?: "") }
     var sizes by remember(product) {
@@ -410,8 +509,7 @@ private fun ProductDialog(
             }
         )
     }
-    var totalCost by remember(product) { mutableStateOf("") }
-    var shippingCost by remember(product) { mutableStateOf("") }
+    val stockUnits = sizes.values.sum()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (product == null) "Nueva prenda" else "Editar prenda") },
@@ -419,67 +517,11 @@ private fun ProductDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
                 OutlinedTextField(description, { description = it }, label = { Text("Descripción") })
-                Text("Stock por talla", style = MaterialTheme.typography.titleMedium)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(categories) { category ->
-                        FilterChip(
-                            selected = category.id == categoryId,
-                            onClick = { categoryId = category.id },
-                            label = { Text(category.name) }
-                        )
-                    }
-                }
-                if (product == null) {
-                    listOf("S", "M", "L", "XL").forEach { size ->
-                        OutlinedTextField(
-                            value = sizes[size].toString(),
-                            onValueChange = { value -> sizes = sizes + (size to (value.toIntOrNull() ?: 0)) },
-                            label = { Text(size) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true
-                        )
-                    }
-                    Text("Lote inicial", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(totalCost, { totalCost = it }, label = { Text("Costo total") }, singleLine = true)
-                    OutlinedTextField(shippingCost, { shippingCost = it }, label = { Text("Costo de envío") }, singleLine = true)
-                } else {
-                    Text("El stock se modifica agregando un lote.")
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val lot = if (product == null) LotDraft(
-                        date = "",
-                        units = sizes.values.sum(),
-                        totalCost = totalCost.toDoubleOrNull() ?: 0.0,
-                        shippingCost = shippingCost.toDoubleOrNull() ?: 0.0,
-                        stock = sizes
-                    ) else null
-                    onSave(categoryId ?: 0L, name.trim(), description.trim().ifBlank { null }, sizes, lot)
-                },
-                enabled = categoryId != null && name.isNotBlank()
-            ) { Text("Guardar") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
-    )
-}
-
-@Composable
-private fun LotDialog(
-    product: Product,
-    onDismiss: () -> Unit,
-    onSave: (LotDraft) -> Unit
-) {
-    var sizes by remember(product) { mutableStateOf(listOf("S", "M", "L", "XL").associateWith { 0 }) }
-    var totalCost by remember(product) { mutableStateOf("") }
-    var shippingCost by remember(product) { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Agregar lote: ${product.name}") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Lote: ${lot?.date ?: product?.lotId ?: "sin seleccionar"} · Disponible: ${lot?.availableUnits ?: "actual"}",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text("Distribuye las unidades de esta prenda por talla.")
                 listOf("S", "M", "L", "XL").forEach { size ->
                     OutlinedTextField(
                         value = sizes[size].toString(),
@@ -489,25 +531,85 @@ private fun LotDialog(
                         singleLine = true
                     )
                 }
-                OutlinedTextField(totalCost, { totalCost = it }, label = { Text("Costo total") }, singleLine = true)
-                OutlinedTextField(shippingCost, { shippingCost = it }, label = { Text("Costo de envío") }, singleLine = true)
+                if (product == null && lot != null && stockUnits > lot.availableUnits) {
+                    Text(
+                        "La prenda supera las unidades disponibles del lote.",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     onSave(
-                        LotDraft(
-                            date = "",
-                            units = sizes.values.sum(),
-                            totalCost = totalCost.toDoubleOrNull() ?: 0.0,
-                            shippingCost = shippingCost.toDoubleOrNull() ?: 0.0,
-                            stock = sizes
-                        )
+                        lotId ?: 0L,
+                        categoryId ?: 0L,
+                        name.trim(),
+                        description.trim().ifBlank { null },
+                        sizes
                     )
                 },
-                enabled = sizes.values.sum() > 0
-            ) { Text("Guardar lote") }
+                enabled = categoryId != null && lotId != null && name.isNotBlank() &&
+                    stockUnits > 0 && (product != null || lot != null && stockUnits <= lot.availableUnits)
+            ) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun LotCreateDialog(
+    category: Category?,
+    onDismiss: () -> Unit,
+    onSave: (Int, Double, Double) -> Unit
+) {
+    var units by remember { mutableStateOf("") }
+    var totalCost by remember { mutableStateOf("") }
+    var shippingCost by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo lote") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Categoría: ${category?.name ?: "sin seleccionar"}")
+                OutlinedTextField(
+                    units,
+                    { units = it },
+                    label = { Text("Unidades totales") },
+                    placeholder = { Text("Ej. 20 prendas") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    totalCost,
+                    { totalCost = it },
+                    label = { Text("Precio de compra total") },
+                    placeholder = { Text("0.00") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    shippingCost,
+                    { shippingCost = it },
+                    label = { Text("Precio del envío") },
+                    placeholder = { Text("0.00") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        units.toIntOrNull() ?: 0,
+                        totalCost.toDoubleOrNull() ?: 0.0,
+                        shippingCost.toDoubleOrNull() ?: 0.0
+                    )
+                },
+                enabled = category != null && (units.toIntOrNull() ?: 0) > 0
+            ) { Text("Crear lote") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )

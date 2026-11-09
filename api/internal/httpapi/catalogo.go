@@ -87,11 +87,13 @@ func (s *Server) desactivarCategoria(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 type productoBody struct {
-	CategoriaID int64           `json:"categoria_id"`
-	Nombre      string          `json:"nombre"`
-	Descripcion *string         `json:"descripcion"`
-	Stock       map[string]int  `json:"stock"`
-	Lote        *store.LoteInput `json:"lote"`
+	CategoriaID  int64            `json:"categoria_id"`
+	LoteID       *int64           `json:"lote_id"`
+	UnidadesLote int              `json:"unidades_lote"`
+	Nombre       string           `json:"nombre"`
+	Descripcion  *string          `json:"descripcion"`
+	Stock        map[string]int   `json:"stock"`
+	Lote         *store.LoteInput `json:"lote"`
 }
 
 type productoResp struct {
@@ -152,11 +154,13 @@ func (s *Server) crearProducto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, lotes, err := s.store.CrearProducto(r.Context(), store.ProductoInput{
-		CategoriaID: b.CategoriaID,
-		Nombre:      b.Nombre,
-		Descripcion: b.Descripcion,
-		Stock:       b.Stock,
-		Lote:        b.Lote,
+		CategoriaID:  b.CategoriaID,
+		LoteID:       b.LoteID,
+		UnidadesLote: b.UnidadesLote,
+		Nombre:       b.Nombre,
+		Descripcion:  b.Descripcion,
+		Stock:        b.Stock,
+		Lote:         b.Lote,
 	})
 	if err != nil {
 		s.traducirError(w, err)
@@ -227,11 +231,33 @@ func (s *Server) subirFoto(w http.ResponseWriter, r *http.Request) {
 	}
 	defer archivo.Close()
 
-	nombre, err := fotos.Guardar(s.cfg.FotosDir, archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
-	if err != nil {
-		s.log.Error("guardar foto", "error", err)
-		responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
-		return
+	var nombre string
+	if s.fotos != nil {
+		procesada, err := fotos.Procesar(archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
+		if err != nil {
+			s.log.Error("procesar foto", "error", err)
+			responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
+			return
+		}
+		nombre = procesada.Nombre
+		if err := s.fotos.Subir(r.Context(), nombre, procesada.Principal); err != nil {
+			s.log.Error("subir foto", "error", err)
+			responderError(w, http.StatusBadGateway, "almacenamiento", err.Error(), nil)
+			return
+		}
+		if err := s.fotos.Subir(r.Context(), fotos.Miniatura(nombre), procesada.Miniatura); err != nil {
+			s.log.Error("subir miniatura", "error", err)
+			responderError(w, http.StatusBadGateway, "almacenamiento", err.Error(), nil)
+			return
+		}
+	} else {
+		var err error
+		nombre, err = fotos.Guardar(s.cfg.FotosDir, archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
+		if err != nil {
+			s.log.Error("guardar foto", "error", err)
+			responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
+			return
+		}
 	}
 	if err := s.store.GuardarFoto(r.Context(), id, nombre); err != nil {
 		s.traducirError(w, err)

@@ -3,6 +3,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import java.util.Properties
+
+val releaseApiKey = providers.gradleProperty("dzApiKey")
+    .orElse(providers.environmentVariable("DZ_API_KEY"))
+    .getOrElse("")
+val signingPropertiesFile = rootProject.file("infra/release-signing.properties")
+val signingProperties = Properties()
+if (signingPropertiesFile.isFile) {
+    signingPropertiesFile.inputStream().use(signingProperties::load)
+}
+
 android {
     namespace = "store.dz.dz_inventory_app"
     compileSdk {
@@ -17,13 +28,28 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8080\"")
+        buildConfigField("String", "API_KEY", "\"\"")
+    }
+
+    signingConfigs {
+        if (signingPropertiesFile.isFile) {
+            create("release") {
+                storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
+            buildConfigField("String", "API_BASE_URL", "\"https://dz-inventory-api.onrender.com\"")
+            buildConfigField("String", "API_KEY", "\"${releaseApiKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
             optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
+                enable = false
             }
         }
     }
@@ -32,6 +58,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }

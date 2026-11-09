@@ -12,13 +12,13 @@ import (
 // LineaVenta es una fila de la venta: producto, talla, unidades y precio
 // de venta del momento (ese precio varía venta a venta, por eso está acá).
 type LineaVenta struct {
-	DetalleID     int64   `json:"detalle_id"`
-	ProductoID    int64   `json:"producto_id"`
-	Producto      string  `json:"producto"`
-	Talla         string  `json:"talla"`
-	Cantidad      int     `json:"cantidad"`
+	DetalleID      int64   `json:"detalle_id"`
+	ProductoID     int64   `json:"producto_id"`
+	Producto       string  `json:"producto"`
+	Talla          string  `json:"talla"`
+	Cantidad       int     `json:"cantidad"`
 	PrecioUnitario float64 `json:"precio_unitario"`
-	Subtotal      float64 `json:"subtotal"`
+	Subtotal       float64 `json:"subtotal"`
 }
 
 // Venta es el registro de una venta (sin caja, sin cliente, sin SUNAT).
@@ -134,12 +134,16 @@ func (s *Store) ListarVentas(ctx context.Context, desde, hasta string, limite, o
 	}
 
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, to_char(fecha, 'YYYY-MM-DD HH24:MI:SS'), estado, notas, unidades, total::float8,
-		        to_char(creado_en, 'YYYY-MM-DD HH24:MI:SS'),
-		        to_char(actualizado_en, 'YYYY-MM-DD HH24:MI:SS')
-		   FROM venta
-		  WHERE fecha BETWEEN $1 AND $2
-		  ORDER BY fecha DESC
+		`SELECT v.id, to_char(v.fecha, 'YYYY-MM-DD HH24:MI:SS'), v.estado, v.notas,
+		        COALESCE(SUM(dv.cantidad), 0)::int,
+		        COALESCE(SUM(dv.cantidad * dv.precio_unitario), 0)::float8,
+		        to_char(v.creado_en, 'YYYY-MM-DD HH24:MI:SS'),
+		        to_char(v.actualizado_en, 'YYYY-MM-DD HH24:MI:SS')
+		   FROM venta v
+		   LEFT JOIN detalle_venta dv ON dv.venta_id = v.id
+		  WHERE v.fecha BETWEEN $1 AND $2
+		  GROUP BY v.id, v.fecha, v.estado, v.notas, v.creado_en, v.actualizado_en
+		  ORDER BY v.fecha DESC
 		  LIMIT $3 OFFSET $4`, d, h, limite, offset)
 	if err != nil {
 		return nil, err

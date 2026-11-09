@@ -37,6 +37,9 @@ Todo por variables de entorno (con prioridad sobre `infra/.env`):
 | `DZ_DATABASE_URL` | armada de `POSTGRES_*` | PostgreSQL |
 | `DZ_REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis (opcional: sin él la API funciona sin caché) |
 | `DZ_FOTOS_DIR` | `../storage/fotos` | dónde se guardan las fotos |
+| `DZ_SUPABASE_URL` | vacío | URL del proyecto Supabase; activa Storage junto con las dos variables siguientes |
+| `DZ_SUPABASE_SERVICE_ROLE_KEY` | vacío | clave `service_role`, solo en el servidor |
+| `DZ_SUPABASE_FOTOS_BUCKET` | `fotos` | bucket de Supabase Storage |
 | `DZ_API_KEY` | vacío | si tiene valor, exige la cabecera `X-API-Key` |
 | `DZ_STOCK_UMBRAL` | `0` | umbral de `/api/stock/bajos` |
 | `DZ_CACHE_TTL` | `60s` | TTL del caché |
@@ -45,6 +48,9 @@ Todo por variables de entorno (con prioridad sobre `infra/.env`):
 
 Errores: siempre `{"error": "...", "codigo": "...", "detalles": {...}}`
 (`validacion` 400, `no_encontrado` 404, `conflicto` / `stock_insuficiente` 409).
+`/api/salud` es público para que Render pueda ejecutar el health check; las
+operaciones de inventario, ventas y reportes requieren `X-API-Key` cuando
+`DZ_API_KEY` está configurada.
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -54,13 +60,14 @@ Errores: siempre `{"error": "...", "codigo": "...", "detalles": {...}}`
 | PUT | `/api/categorias/{id}` | actualiza |
 | DELETE | `/api/categorias/{id}` | desactiva (409 si tiene productos activos) |
 | GET | `/api/productos?q=&categoria_id=&con_stock=&incluir_inactivos=` | catálogo con stock por talla |
-| POST | `/api/productos` | crea `{categoria_id, nombre, descripcion?, stock:{S,M,L,XL}, lote?}` |
+| POST | `/api/productos` | crea `{categoria_id, lote_id, unidades_lote, nombre, descripcion?, stock:{S,M,L,XL}}` |
 | GET | `/api/productos/{id}` | producto + últimos 5 lotes |
 | PUT | `/api/productos/{id}` | actualiza nombre/descripción/categoría |
 | DELETE | `/api/productos/{id}` | borrado lógico |
 | POST | `/api/productos/{id}/foto` | multipart campo `foto` → devuelve `foto_url` y `foto_thumb_url` |
-| GET | `/api/fotos/{archivo}` | sirve foto o miniatura (sin API key) |
-| POST | `/api/lotes` | compra `{producto_id, fecha?, unidades?, costo_total, costo_envio, stock?}` |
+| GET | `/api/fotos/{archivo}` | sirve foto o miniatura (sin API key), desde Supabase Storage si está configurado |
+| POST | `/api/lotes` | crea un lote por categoría `{categoria_id, fecha?, unidades, costo_total, costo_envio}` o agrega stock a un producto existente con `{producto_id, fecha?, unidades, costo_total, costo_envio, stock?}` |
+| GET | `/api/lotes?categoria_id=` | lista lotes y unidades disponibles para asignar productos |
 | GET | `/api/ventas?desde=&hasta=&limite=&offset=` | ventas con líneas |
 | POST | `/api/ventas` | registra venta (valida stock en la API) |
 | POST | `/api/ventas/{id}/anular` | anula y repone stock |
@@ -101,5 +108,6 @@ internal/store/     acceso a PostgreSQL y reglas de negocio (transacciones)
 internal/httpapi/   router chi, handlers, errores, API key, logs
 internal/cache/     Redis con invalidación por generación (INCR)
 internal/fotos/     redimensionado + miniatura JPEG
+internal/storage/   adaptador de objetos para Supabase Storage
 internal/report/    cálculos de ganancia y %
 ```

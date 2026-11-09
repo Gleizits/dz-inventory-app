@@ -16,6 +16,8 @@ data class Product(
     val id: Long,
     val categoryId: Long,
     val category: String,
+    val lotId: Long,
+    val lotUnits: Int,
     val name: String,
     val description: String?,
     val photoPath: String?,
@@ -26,12 +28,17 @@ data class Product(
 
 data class Lot(
     val id: Long,
+    val categoryId: Long,
+    val category: String,
     val productId: Long,
     val date: String,
     val units: Int,
     val totalCost: Double,
     val shippingCost: Double,
     val unitCost: Double
+    ,
+    val assignedUnits: Int,
+    val availableUnits: Int
 )
 
 data class ProductDetails(
