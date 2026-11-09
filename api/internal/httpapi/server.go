@@ -40,31 +40,33 @@ func New(st *store.Store, ca *cache.Cache, cfg config.Config, log *slog.Logger) 
 	r.Get("/api/fotos/{archivo}", s.servirFoto)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Use(s.apiKey)
-
 		r.Get("/salud", s.salud)
 
-		r.Get("/categorias", s.listarCategorias)
-		r.Post("/categorias", s.crearCategoria)
-		r.Put("/categorias/{id}", s.actualizarCategoria)
-		r.Delete("/categorias/{id}", s.desactivarCategoria)
+		r.Group(func(r chi.Router) {
+			r.Use(s.apiKey)
 
-		r.Get("/productos", s.listarProductos)
-		r.Post("/productos", s.crearProducto)
-		r.Get("/productos/{id}", s.obtenerProducto)
-		r.Put("/productos/{id}", s.actualizarProducto)
-		r.Delete("/productos/{id}", s.desactivarProducto)
-		r.Post("/productos/{id}/foto", s.subirFoto)
+			r.Get("/categorias", s.listarCategorias)
+			r.Post("/categorias", s.crearCategoria)
+			r.Put("/categorias/{id}", s.actualizarCategoria)
+			r.Delete("/categorias/{id}", s.desactivarCategoria)
 
-		r.Post("/lotes", s.crearLote)
-		r.Get("/lotes", s.listarLotes)
+			r.Get("/productos", s.listarProductos)
+			r.Post("/productos", s.crearProducto)
+			r.Get("/productos/{id}", s.obtenerProducto)
+			r.Put("/productos/{id}", s.actualizarProducto)
+			r.Delete("/productos/{id}", s.desactivarProducto)
+			r.Post("/productos/{id}/foto", s.subirFoto)
 
-		r.Get("/ventas", s.listarVentas)
-		r.Post("/ventas", s.crearVenta)
-		r.Post("/ventas/{id}/anular", s.anularVenta)
+			r.Post("/lotes", s.crearLote)
+			r.Get("/lotes", s.listarLotes)
 
-		r.Get("/reportes/ventas", s.reporteVentas)
-		r.Get("/stock/bajos", s.stockBajos)
+			r.Get("/ventas", s.listarVentas)
+			r.Post("/ventas", s.crearVenta)
+			r.Post("/ventas/{id}/anular", s.anularVenta)
+
+			r.Get("/reportes/ventas", s.reporteVentas)
+			r.Get("/stock/bajos", s.stockBajos)
+		})
 	})
 
 	return r

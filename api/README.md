@@ -45,6 +45,9 @@ Todo por variables de entorno (con prioridad sobre `infra/.env`):
 
 Errores: siempre `{"error": "...", "codigo": "...", "detalles": {...}}`
 (`validacion` 400, `no_encontrado` 404, `conflicto` / `stock_insuficiente` 409).
+`/api/salud` es público para que Render pueda ejecutar el health check; las
+operaciones de inventario, ventas y reportes requieren `X-API-Key` cuando
+`DZ_API_KEY` está configurada.
 
 | Método | Ruta | Descripción |
 |---|---|---|
