@@ -15,7 +15,8 @@ Android Compose ──HTTP local (debug)──► API Go :8080
 - **Android:** Kotlin, Jetpack Compose y Material 3.
 - **API:** Go, router chi y PostgreSQL.
 - **Base de datos:** migraciones SQL versionadas con Flyway.
-- **Fotos:** la API genera la foto principal y una miniatura.
+- **Fotos:** la API genera la foto principal y una miniatura; en producción
+  puede almacenarlas en Supabase Storage.
 - **Flujo de inventario:** categoría → lote → uno o varios productos dentro del
   lote → stock por talla.
 - **Reportes:** ventas, costo promedio ponderado, ganancia y porcentaje.
@@ -152,6 +153,9 @@ Variables principales:
 - `DZ_REDIS_URL`
 - `DZ_API_ADDR`
 - `DZ_FOTOS_DIR`
+- `DZ_SUPABASE_URL`
+- `DZ_SUPABASE_SERVICE_ROLE_KEY`
+- `DZ_SUPABASE_FOTOS_BUCKET`
 - `DZ_API_KEY`
 - `DZ_STOCK_UMBRAL`
 - `DZ_CACHE_TTL`

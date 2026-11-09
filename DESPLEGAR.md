@@ -70,6 +70,9 @@ DZ_API_ADDR=:8080
 DZ_DATABASE_URL=postgres://USUARIO:CONTRASENA@HOST:5432/BASE?sslmode=require
 DZ_REDIS_URL=redis://HOST_REDIS:6379/0
 DZ_FOTOS_DIR=/var/lib/dz-inventory/fotos
+DZ_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+DZ_SUPABASE_SERVICE_ROLE_KEY=CLAVE_SERVICE_ROLE_SOLO_EN_RENDER
+DZ_SUPABASE_FOTOS_BUCKET=fotos
 DZ_API_KEY=CAMBIA_ESTA_CLAVE
 DZ_STOCK_UMBRAL=0
 DZ_CACHE_TTL=60s
@@ -82,8 +85,13 @@ Recomendaciones:
 - Usa una cuenta de base de datos con los permisos mínimos necesarios.
 - Define `DZ_API_KEY` en producción y configura el cliente Android para
   enviarla.
-- Crea `DZ_FOTOS_DIR` en un volumen persistente con permisos para el usuario
-  que ejecuta la API.
+- No expongas `DZ_SUPABASE_SERVICE_ROLE_KEY` en Android ni en el repositorio.
+- Crea en Supabase Storage un bucket privado llamado `fotos`. La API usa la
+  clave `service_role` para subir y servir las imágenes mediante sus propios
+  endpoints.
+- Si no configuras Supabase Storage, crea `DZ_FOTOS_DIR` en un volumen
+  persistente. Render Free no ofrece ese volumen, por lo que las fotos locales
+  se perderían al reiniciar.
 - No copies `infra/.env` del entorno local al servidor.
 - Configura reinicio automático del proceso mediante el servicio del host.
 
@@ -94,6 +102,9 @@ export DZ_API_ADDR=:8080
 export DZ_DATABASE_URL='postgres://...'
 export DZ_REDIS_URL='redis://...'
 export DZ_FOTOS_DIR='/var/lib/dz-inventory/fotos'
+export DZ_SUPABASE_URL='https://TU-PROYECTO.supabase.co'
+export DZ_SUPABASE_SERVICE_ROLE_KEY='...'
+export DZ_SUPABASE_FOTOS_BUCKET='fotos'
 export DZ_API_KEY='...'
 ./dz-inventory-api
 ```
@@ -122,18 +133,32 @@ Invoke-WebRequest https://api.ejemplo.com/api/salud
 Debe responder con el estado de salud de PostgreSQL y Redis. No expongas
 PostgreSQL ni Redis directamente a Internet.
 
-## 5. Fotos
+## 5. Fotos con Supabase Storage
 
-La implementación actual guarda fotos en `DZ_FOTOS_DIR` y sirve:
+1. En Supabase abre **Storage** y crea un bucket privado llamado `fotos`.
+2. En **Project Settings → API**, copia la clave secreta `service_role`.
+3. En Render añade `DZ_SUPABASE_URL`, `DZ_SUPABASE_SERVICE_ROLE_KEY` y
+   `DZ_SUPABASE_FOTOS_BUCKET=fotos`.
+4. Guarda los cambios y espera el redeploy.
+
+La API redimensiona cada imagen, sube `{nombre}.jpg` y
+`{nombre}_thumb.jpg` al bucket, y mantiene `/api/fotos/{archivo}` para que la
+app no cambie. La clave `service_role` nunca debe entrar en la APK.
+
+Si las variables de Supabase Storage no están configuradas, la API usa el
+disco indicado por `DZ_FOTOS_DIR` como fallback.
+
+## 6. Fotos sin almacenamiento externo
+
+El fallback local guarda fotos en `DZ_FOTOS_DIR` y sirve:
 
 - `/api/fotos/{archivo}`
 - `/api/productos/{id}/foto`
 
-En producción, el directorio debe estar en almacenamiento persistente o se
-debe completar el adaptador para Supabase Storage. No uses un disco efímero:
+No uses un disco efímero en producción si no has configurado Supabase Storage:
 las fotos se perderían al reiniciar o reemplazar el host.
 
-## 6. Verificación antes de publicar
+## 7. Verificación antes de publicar
 
 Ejecuta estas comprobaciones:
 
@@ -156,7 +181,7 @@ Después verifica manualmente:
 6. Subir una foto y descargar la foto principal y la miniatura.
 7. Probar la APK contra HTTPS, sin `adb reverse`.
 
-## 7. Operación y mantenimiento
+## 8. Operación y mantenimiento
 
 - Conserva copias de seguridad de PostgreSQL según la política de Supabase.
 - Conserva el volumen de fotos y respáldalo junto con la base.

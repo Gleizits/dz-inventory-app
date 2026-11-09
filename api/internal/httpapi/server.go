@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/Gleizits/dz-inventory-app/api/internal/cache"
 	"github.com/Gleizits/dz-inventory-app/api/internal/config"
 	"github.com/Gleizits/dz-inventory-app/api/internal/fotos"
+	"github.com/Gleizits/dz-inventory-app/api/internal/storage"
 	"github.com/Gleizits/dz-inventory-app/api/internal/store"
 )
 
@@ -24,11 +26,18 @@ type Server struct {
 	cache *cache.Cache
 	cfg   config.Config
 	log   *slog.Logger
+	fotos *storage.Supabase
 }
 
 // New arma el router con todas las rutas.
 func New(st *store.Store, ca *cache.Cache, cfg config.Config, log *slog.Logger) http.Handler {
-	s := &Server{store: st, cache: ca, cfg: cfg, log: log}
+	s := &Server{
+		store: st,
+		cache: ca,
+		cfg:   cfg,
+		log:   log,
+		fotos: storage.NewSupabase(cfg.SupabaseURL, cfg.SupabaseKey, cfg.FotosBucket),
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
@@ -166,10 +175,19 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// servirFoto entrega la foto o su miniatura validando que el nombre no se
-// salga del directorio.
+// servirFoto entrega la foto o su miniatura usando el almacenamiento configurado.
 func (s *Server) servirFoto(w http.ResponseWriter, r *http.Request) {
 	nombre := chi.URLParam(r, "archivo")
+	if s.fotos != nil {
+		contenido, err := s.fotos.Descargar(r.Context(), nombre)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		http.ServeContent(w, r, nombre, time.Time{}, bytes.NewReader(contenido))
+		return
+	}
 	ruta, err := fotos.RutaSegura(s.cfg.FotosDir, nombre)
 	if err != nil {
 		http.NotFound(w, r)

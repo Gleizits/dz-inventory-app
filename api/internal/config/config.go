@@ -18,6 +18,9 @@ type Config struct {
 	DBURL       string        // postgres://...
 	RedisURL    string        // redis://...
 	FotosDir    string        // donde se guardan las fotos
+	SupabaseURL string        // https://<proyecto>.supabase.co
+	SupabaseKey string        // service_role, solo en el servidor
+	FotosBucket string        // bucket de Supabase Storage
 	AnchoMax    int           // ancho máximo de la foto completa
 	AnchoThumb  int           // ancho de la miniatura
 	APIKey      string        // vacío = sin autenticación (dev local)
@@ -38,6 +41,9 @@ func Load() (Config, error) {
 		Addr:        env("DZ_API_ADDR", ":8080"),
 		RedisURL:    env("DZ_REDIS_URL", "redis://127.0.0.1:6379/0"),
 		FotosDir:    env("DZ_FOTOS_DIR", filepath.Join(root, "storage", "fotos")),
+		SupabaseURL: env("DZ_SUPABASE_URL", ""),
+		SupabaseKey: env("DZ_SUPABASE_SERVICE_ROLE_KEY", ""),
+		FotosBucket: env("DZ_SUPABASE_FOTOS_BUCKET", "fotos"),
 		APIKey:      env("DZ_API_KEY", ""),
 		StockUmbral: envInt("DZ_STOCK_UMBRAL", 0),
 	}

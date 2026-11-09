@@ -231,11 +231,33 @@ func (s *Server) subirFoto(w http.ResponseWriter, r *http.Request) {
 	}
 	defer archivo.Close()
 
-	nombre, err := fotos.Guardar(s.cfg.FotosDir, archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
-	if err != nil {
-		s.log.Error("guardar foto", "error", err)
-		responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
-		return
+	var nombre string
+	if s.fotos != nil {
+		procesada, err := fotos.Procesar(archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
+		if err != nil {
+			s.log.Error("procesar foto", "error", err)
+			responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
+			return
+		}
+		nombre = procesada.Nombre
+		if err := s.fotos.Subir(r.Context(), nombre, procesada.Principal); err != nil {
+			s.log.Error("subir foto", "error", err)
+			responderError(w, http.StatusBadGateway, "almacenamiento", err.Error(), nil)
+			return
+		}
+		if err := s.fotos.Subir(r.Context(), fotos.Miniatura(nombre), procesada.Miniatura); err != nil {
+			s.log.Error("subir miniatura", "error", err)
+			responderError(w, http.StatusBadGateway, "almacenamiento", err.Error(), nil)
+			return
+		}
+	} else {
+		var err error
+		nombre, err = fotos.Guardar(s.cfg.FotosDir, archivo, s.cfg.AnchoMax, s.cfg.AnchoThumb)
+		if err != nil {
+			s.log.Error("guardar foto", "error", err)
+			responderError(w, http.StatusBadRequest, "foto_invalida", err.Error(), nil)
+			return
+		}
 	}
 	if err := s.store.GuardarFoto(r.Context(), id, nombre); err != nil {
 		s.traducirError(w, err)
