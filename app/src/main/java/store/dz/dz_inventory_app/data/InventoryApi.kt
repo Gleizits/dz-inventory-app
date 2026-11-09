@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import store.dz.dz_inventory_app.BuildConfig
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
@@ -14,7 +15,8 @@ import java.net.URL
 import java.net.URLEncoder
 
 class InventoryApi(
-    private val baseUrl: String = "http://127.0.0.1:8080"
+    private val baseUrl: String = BuildConfig.API_BASE_URL,
+    private val apiKey: String = BuildConfig.API_KEY
 ) {
     fun photoUrl(photoPath: String?): String? =
         photoPath?.let { "$baseUrl/api/fotos/$it" }
@@ -215,6 +217,9 @@ class InventoryApi(
             connectTimeout = 8_000
             readTimeout = 15_000
             setRequestProperty("Accept", "application/json")
+            if (apiKey.isNotBlank()) {
+                setRequestProperty("X-API-Key", apiKey)
+            }
         }
     }
 

@@ -41,3 +41,5 @@ node_modules/
 
 infra/.dz-api-key
 infra/.render-api-key
+infra/release-signing.properties
+infra/dz-urban-style-release.jks
