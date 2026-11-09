@@ -4,14 +4,19 @@ Esta guía describe cómo pasar la API y la base de datos a producción. La
 arquitectura prevista es:
 
 ```text
-APK Android ──HTTPS──► API Go (host de producción)
+APK Android ──HTTPS──► API Go en Render Free
                        ├── PostgreSQL de Supabase
-                       └── almacenamiento persistente de fotos
+                       └── Supabase Storage (bucket privado `fotos`)
 ```
 
-El host del binario Go todavía debe definirse. Puede ser una VM, servidor
-dedicado o servicio equivalente sin costo adicional dentro de las
-restricciones del proyecto.
+Despliegue actual:
+
+- API: `https://dz-inventory-api.onrender.com`
+- Servicio Render: `dz-inventory-api`
+- Rama desplegada: `develop`
+- Directorio raíz: `api`
+- Redis: opcional; Render Free funciona sin caché
+- Health check público: `/api/salud`
 
 ## 1. Preparar PostgreSQL de producción
 
@@ -29,10 +34,24 @@ go run .\cmd\api
 Pop-Location
 ```
 
-Para aplicar Flyway directamente se debe usar la misma URL, usuario y
-contraseña en el contenedor Flyway. No ejecutes `reset` contra producción:
+Para aplicar Flyway directamente contra Supabase desde PowerShell:
+
+```powershell
+$SUPABASE_PASSWORD = Read-Host "Contraseña actual de Supabase"
+
+podman run --rm `
+  --volume "${PWD}\db\migrations:/flyway/sql:ro" `
+  -e FLYWAY_URL="jdbc:postgresql://HOST_POOLER:5432/postgres?sslmode=require" `
+  -e FLYWAY_USER="USUARIO_POOLER" `
+  -e FLYWAY_PASSWORD="$SUPABASE_PASSWORD" `
+  docker.io/flyway/flyway:11 migrate
+
+Remove-Variable SUPABASE_PASSWORD
+```
+
+Usa el Session Pooler de Supabase. No ejecutes `reset` contra producción:
 esa operación elimina el volumen local y está destinada únicamente a
-desarrollo.
+desarrollo. La versión actual de producción es V3 `seguridad`.
 
 La base debe empezar sin datos de ejemplo. Las categorías, lotes y productos
 se registran desde la aplicación.
@@ -61,15 +80,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dz-inventory-api ./cmd/api
 El binario necesita acceso de red a PostgreSQL y Redis. Redis es opcional: si
 no está disponible, la API funciona sin caché.
 
-## 3. Configurar la API
+## 3. Configurar la API en Render
 
-En el host de producción, define las variables sin subirlas al repositorio:
+En Render, abre `dz-inventory-api` → **Environment** y define las variables
+sin subirlas al repositorio:
 
 ```text
 DZ_API_ADDR=:8080
 DZ_DATABASE_URL=postgres://USUARIO:CONTRASENA@HOST:5432/BASE?sslmode=require
 DZ_REDIS_URL=redis://HOST_REDIS:6379/0
-DZ_FOTOS_DIR=/var/lib/dz-inventory/fotos
+DZ_FOTOS_DIR=/tmp/dz-inventory-fotos
 DZ_SUPABASE_URL=https://TU-PROYECTO.supabase.co
 DZ_SUPABASE_SERVICE_ROLE_KEY=CLAVE_SERVICE_ROLE_SOLO_EN_RENDER
 DZ_SUPABASE_FOTOS_BUCKET=fotos
@@ -93,7 +113,11 @@ Recomendaciones:
   persistente. Render Free no ofrece ese volumen, por lo que las fotos locales
   se perderían al reiniciar.
 - No copies `infra/.env` del entorno local al servidor.
-- Configura reinicio automático del proceso mediante el servicio del host.
+- Render usa `DZ_API_ADDR=0.0.0.0:10000`, build command
+  `go build -o dz-inventory-api ./cmd/api`, start command
+  `./dz-inventory-api` y health check `/api/salud`.
+- Render Free no conserva `/tmp` entre reinicios; Storage debe estar
+  configurado para producción.
 
 Ejemplo de ejecución manual:
 
@@ -158,7 +182,33 @@ El fallback local guarda fotos en `DZ_FOTOS_DIR` y sirve:
 No uses un disco efímero en producción si no has configurado Supabase Storage:
 las fotos se perderían al reiniciar o reemplazar el host.
 
-## 7. Verificación antes de publicar
+## 7. Configurar y firmar la APK
+
+La variante `release` usa:
+
+- API: `https://dz-inventory-api.onrender.com`
+- Cabecera `X-API-Key`
+- HTTP claro desactivado
+- Nombre visible: `DZ Inventario`
+
+La API key se proporciona solo durante la compilación mediante una variable
+local. No la guardes en Git:
+
+```powershell
+$env:DZ_API_KEY = (Get-Content .\infra\.dz-api-key -Raw).Trim()
+.\gradlew.bat clean assembleRelease
+Remove-Item Env:DZ_API_KEY
+```
+
+El keystore de release y `infra/release-signing.properties` son locales y
+están excluidos por `.gitignore`. Conserva ambos para futuras actualizaciones.
+La APK queda en:
+
+```text
+app\build\outputs\apk\release\app-release.apk
+```
+
+## 8. Verificación antes de publicar
 
 Ejecuta estas comprobaciones:
 
@@ -181,7 +231,7 @@ Después verifica manualmente:
 6. Subir una foto y descargar la foto principal y la miniatura.
 7. Probar la APK contra HTTPS, sin `adb reverse`.
 
-## 8. Operación y mantenimiento
+## 9. Operación y mantenimiento
 
 - Conserva copias de seguridad de PostgreSQL según la política de Supabase.
 - Conserva el volumen de fotos y respáldalo junto con la base.
